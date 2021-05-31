@@ -18,8 +18,20 @@ const signinPayloadSchema = Joi.object({
   password: Joi.string().required(),
 });
 
-const createToken = (user: User) => {
-  return jwt.sign({ id: user.id }, config.secrets.jwt);
+const createAccessToken = (user: User) => {
+  return jwt.sign(
+    { id: user.id, role: user.role },
+    config.secrets.accessToken,
+    {
+      expiresIn: "15m",
+    }
+  );
+};
+
+const createRefreshToken = (user: User) => {
+  return jwt.sign({ id: user.id }, config.secrets.refreshToken, {
+    expiresIn: "7d",
+  });
 };
 
 export const signup = async (req: Request, res: Response) => {
@@ -62,9 +74,34 @@ export const signin = async (req: Request, res: Response) => {
   const isValid = await bcrypt.compare(payload.password, user.password);
   if (!isValid) return res.status(401).end();
 
-  const token = createToken(user);
+  const accessToken = createAccessToken(user);
+  const refreshToken = createRefreshToken(user);
 
-  return res.status(201).json({ token });
+  // append refresh token to the cookie
+  res.cookie(config.cookies.refreshToken, refreshToken, {
+    httpOnly: true,
+    path: "/refresh_token",
+  });
+
+  return res.status(201).json({ accessToken });
+};
+
+export const refreshToken = async (req: Request, res: Response) => {
+  const refreshToken = req.cookies[config.cookies.refreshToken];
+  if (!refreshToken) return res.status(400).end();
+
+  try {
+    const { id } = jwt.verify(refreshToken, config.secrets.refreshToken);
+
+    const user = await prisma.user.findUnique({ where: { id } });
+    if (!user) return res.status(400).end();
+
+    const accessToken = createAccessToken(user);
+
+    return res.json({ accessToken });
+  } catch (error) {
+    return res.status(401).end();
+  }
 };
 
 export const protect =
@@ -78,17 +115,14 @@ export const protect =
 
     const token = bearer.split("Bearer ")[1].trim();
     try {
-      const { id } = await jwt.verify(token, config.secrets.jwt);
-      const user = await prisma.user.findUnique({ where: { id } });
+      const { id, role } = await jwt.verify(token, config.secrets.accessToken);
 
-      if (user === null) return res.status(401).end();
-
-      if (allowedRoles.length !== 0 && !allowedRoles.includes(user.role)) {
+      if (allowedRoles.length !== 0 && !allowedRoles.includes(role)) {
         return res.status(401).end();
       }
 
       // other middlewares down the pipeline can access user now!
-      req.user = user;
+      req.user = { id };
     } catch (e) {
       return res.status(401).end();
     }
