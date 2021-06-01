@@ -4,7 +4,7 @@ import cors from "cors";
 import cookieParser from "cookie-parser";
 
 import config from "./config";
-import { signup, signin, protect, refreshToken } from "./utils/auth";
+import { signup, signin, protect, refreshToken, logout } from "./utils/auth";
 
 export const app = express();
 
@@ -18,6 +18,7 @@ app.use(morgan("dev"));
 app.post("/signup", signup);
 app.post("/signin", signin);
 app.post("/refresh_token", refreshToken);
+app.post("/logout", protect(), logout);
 
 app.get("/api/public", (_, res) => {
   // everybody can access to this endpoint

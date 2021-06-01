@@ -34,6 +34,13 @@ const createRefreshToken = (user: User) => {
   });
 };
 
+const setRefreshTokenCookie = (res: Response, refreshToken: string) => {
+  res.cookie(config.cookies.refreshToken, refreshToken, {
+    httpOnly: true,
+    path: "/refresh_token",
+  });
+};
+
 export const signup = async (req: Request, res: Response) => {
   const payload = req.body;
 
@@ -74,16 +81,17 @@ export const signin = async (req: Request, res: Response) => {
   const isValid = await bcrypt.compare(payload.password, user.password);
   if (!isValid) return res.status(401).end();
 
-  const accessToken = createAccessToken(user);
   const refreshToken = createRefreshToken(user);
+  setRefreshTokenCookie(res, refreshToken);
 
-  // append refresh token to the cookie
-  res.cookie(config.cookies.refreshToken, refreshToken, {
-    httpOnly: true,
-    path: "/refresh_token",
-  });
-
+  const accessToken = createAccessToken(user);
   return res.status(201).json({ accessToken });
+};
+
+export const logout = async (_, res: Response) => {
+  setRefreshTokenCookie(res, "");
+
+  return res.json({ data: "succesfully logged out" });
 };
 
 export const refreshToken = async (req: Request, res: Response) => {
@@ -121,7 +129,7 @@ export const protect =
         return res.status(401).end();
       }
 
-      // other middlewares down the pipeline can access user now!
+      // other middlewares down the pipeline can access the user id now!
       req.user = { id };
     } catch (e) {
       return res.status(401).end();
